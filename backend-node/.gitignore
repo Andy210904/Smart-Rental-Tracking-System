@@ -3,5 +3,6 @@ dist/
 .env
 # SQLite dev DB
 prisma/dev.db
+prisma/dev.db*
 # Logs
 *.log
