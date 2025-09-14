@@ -7,6 +7,7 @@ import { router as equipmentRouter } from './routes/equipment';
 import { router as sitesRouter } from './routes/sites';
 import { router as operatorsRouter } from './routes/operators';
 import { router as rentalsRouter } from './routes/rentals';
+import { router as dashboardRouter } from './routes/dashboard';
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'healthy', service: 'Smart Rental Tracker API (Node)' });
 });
 
+app.use('/', dashboardRouter);
 app.use('/equipment', equipmentRouter);
 app.use('/sites', sitesRouter);
 app.use('/operators', operatorsRouter);

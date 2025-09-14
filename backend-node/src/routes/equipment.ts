@@ -22,9 +22,20 @@ const EquipmentCreate = z.object({
   status: z.string().optional().default('available')
 });
 
-router.get('/', async (_req: Request, res: Response) => {
-  const items = await prisma.equipment.findMany({ take: 1000 });
+const EquipmentUpdate = EquipmentCreate.partial();
+
+router.get('/', async (req: Request, res: Response) => {
+  const skip = Number(req.query.skip ?? 0);
+  const limit = Math.min(Number(req.query.limit ?? 1000), 10000);
+  const items = await prisma.equipment.findMany({ skip, take: limit });
   res.json(items);
+});
+
+router.get('/:id', async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const item = await prisma.equipment.findUnique({ where: { id } });
+  if (!item) return res.status(404).json({ detail: 'Equipment not found' });
+  res.json(item);
 });
 
 router.post('/', async (req: Request, res: Response) => {
@@ -41,5 +52,27 @@ router.post('/', async (req: Request, res: Response) => {
     }
     console.error(e);
     return res.status(500).json({ detail: 'Internal server error' });
+  }
+});
+
+router.put('/:id', async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const parsed = EquipmentUpdate.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const updated = await prisma.equipment.update({ where: { id }, data: parsed.data });
+    return res.json(updated);
+  } catch (e) {
+    return res.status(404).json({ detail: 'Equipment not found' });
+  }
+});
+
+router.delete('/:id', async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  try {
+    await prisma.equipment.delete({ where: { id } });
+    return res.status(204).send();
+  } catch (e) {
+    return res.status(404).json({ detail: 'Equipment not found' });
   }
 });
