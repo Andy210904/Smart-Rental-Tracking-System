@@ -8,6 +8,7 @@ import { router as sitesRouter } from './routes/sites';
 import { router as operatorsRouter } from './routes/operators';
 import { router as rentalsRouter } from './routes/rentals';
 import { router as dashboardRouter } from './routes/dashboard';
+import { router as mlRouter } from './routes/ml';
 
 dotenv.config();
 
@@ -26,6 +27,7 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 
 app.use('/', dashboardRouter);
+app.use('/', mlRouter);
 app.use('/equipment', equipmentRouter);
 app.use('/sites', sitesRouter);
 app.use('/operators', operatorsRouter);
