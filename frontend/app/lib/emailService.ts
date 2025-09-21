@@ -1,9 +1,9 @@
 import emailjs from '@emailjs/browser'
 
 // EmailJS configuration - hardcoded values
-const EMAILJS_SERVICE_ID = 'service_b55jyth'
-const EMAILJS_TEMPLATE_ID = 'template_6fnnn1s'
-const EMAILJS_PUBLIC_KEY = 'rNUrJGG1_cyzTokDj'
+const EMAILJS_SERVICE_ID = 'service_8r31cg9'
+const EMAILJS_TEMPLATE_ID = 'template_1dewyhp'
+const EMAILJS_PUBLIC_KEY = '0gG4c26YC2ETAyn7Z'
 
 // Initialize EmailJS
 emailjs.init(EMAILJS_PUBLIC_KEY)
@@ -28,19 +28,24 @@ export interface BulkAlertData {
 }
 
 export class EmailService {
-  // Send individual equipment alert
-  static async sendEquipmentAlert(alert: EquipmentAlert, recipientEmail: string): Promise<boolean> {
+
+
+  // Send individual equipment alert with proper template formatting
+  static async sendEquipmentAlert(alert: EquipmentAlert, recipientEmail: string = 'andyop210904@gmail.com'): Promise<boolean> {
     try {
-      // Always include vanshsehgal2026@gmail.com in the recipient list
-      const recipients = [recipientEmail, 'vanshsehgal2026@gmail.com']
-      const uniqueRecipients = Array.from(new Set(recipients)) // Remove duplicates
+      console.log('📧 Sending equipment alert for:', alert.equipment_id)
       
       const templateParams = {
-        from_name: 'Equipment Management System',
-        from_email: 'noreply@equipment.com',
-        subject: `Equipment Alert - ${alert.equipment_id}`,
+        equipment_id: alert.equipment_id,
+        equipment_type: alert.type,
+        site_id: alert.site_id,
+        priority: alert.priority,
+        due_date: alert.due_date,
+        days_remaining: alert.days_remaining.toString(),
         message: this.generateEquipmentMessage(alert)
       }
+
+      console.log('Sending equipment alert with params:', templateParams)
 
       const response = await emailjs.send(
         EMAILJS_SERVICE_ID,
@@ -48,38 +53,45 @@ export class EmailService {
         templateParams
       )
 
-      console.log('Equipment alert email sent to:', uniqueRecipients, response)
+      console.log('✅ Equipment alert email sent successfully:', response)
       return true
     } catch (error: any) {
-      console.error('Error sending equipment alert email:', error)
+      console.error('❌ Error sending equipment alert email:', error)
       console.error('Error details:', {
         message: error.message,
         status: error.status,
         code: error.code,
         serviceId: EMAILJS_SERVICE_ID,
-        templateId: 'equipment_alert'
+        templateId: EMAILJS_TEMPLATE_ID
       })
       return false
     }
   }
 
   // Send bulk due soon alerts
-  static async sendDueSoonAlerts(alerts: EquipmentAlert[], recipientEmails: string[]): Promise<boolean> {
+  static async sendDueSoonAlerts(alerts: EquipmentAlert[], recipientEmails: string[] = ['andyop210904@gmail.com']): Promise<boolean> {
     try {
+      console.log('📧 Sending due soon alerts for', alerts.length, 'equipment items')
+      
       const urgentItems = alerts.filter(item => item.days_remaining <= 7)
       const thisWeekItems = alerts.filter(item => item.days_remaining > 7 && item.days_remaining <= 14)
       const nextMonthItems = alerts.filter(item => item.days_remaining > 14)
 
-      // Always include vanshsehgal2026@gmail.com in the recipient list
-      const allRecipients = [...recipientEmails, 'vanshsehgal2026@gmail.com']
-      const uniqueRecipients = Array.from(new Set(allRecipients)) // Remove duplicates
-
       const templateParams = {
-        from_name: 'Equipment Management System',
-        from_email: 'noreply@equipment.com',
-        subject: `Due Soon Alerts - ${alerts.length} Equipment Items`,
-        message: this.generateDueSoonMessage(alerts, urgentItems, thisWeekItems, nextMonthItems)
+        equipment_id: 'BULK_DUE_SOON',
+        equipment_type: 'Multiple Equipment Items',
+        site_id: 'Multiple Sites',
+        priority: 'DUE SOON ALERT',
+        due_date: 'Various Dates',
+        days_remaining: 'Variable',
+        message: this.generateDueSoonMessage(alerts, urgentItems, thisWeekItems, nextMonthItems),
+        total_items: alerts.length.toString(),
+        urgent_count: urgentItems.length.toString(),
+        this_week_count: thisWeekItems.length.toString(),
+        next_month_count: nextMonthItems.length.toString()
       }
+
+      console.log('Sending due soon alerts with params:', templateParams)
 
       const response = await emailjs.send(
         EMAILJS_SERVICE_ID,
@@ -87,7 +99,7 @@ export class EmailService {
         templateParams
       )
 
-      console.log('Due soon alerts email sent to:', uniqueRecipients, response)
+      console.log('✅ Due soon alerts email sent successfully:', response)
       return true
     } catch (error: any) {
       console.error('Error sending due soon alerts email:', error)
@@ -105,15 +117,18 @@ export class EmailService {
   // Send overdue alerts
   static async sendOverdueAlerts(overdueCount: number, recipientEmails: string[]): Promise<boolean> {
     try {
-      // Always include vanshsehgal2026@gmail.com in the recipient list
-      const allRecipients = [...recipientEmails, 'vanshsehgal2026@gmail.com']
+      // Always include andyop210904@gmail.com in the recipient list
+      const allRecipients = [...recipientEmails, 'andyop210904@gmail.com']
       const uniqueRecipients = Array.from(new Set(allRecipients)) // Remove duplicates
       
       const templateParams = {
         from_name: 'Equipment Management System',
         from_email: 'noreply@equipment.com',
+        to_email: 'andyop210904@gmail.com', // Explicit recipient
         subject: `URGENT: ${overdueCount} Overdue Equipment Items`,
-        message: this.generateOverdueMessage(overdueCount)
+        message: this.generateOverdueMessage(overdueCount),
+        // Additional template variables
+        overdue_count: overdueCount.toString()
       }
 
       const response = await emailjs.send(
@@ -145,15 +160,21 @@ export class EmailService {
     recipientEmails: string[]
   ): Promise<boolean> {
     try {
-      // Always include vanshsehgal2026@gmail.com in the recipient list
-      const allRecipients = [...recipientEmails, 'vanshsehgal2026@gmail.com']
+      // Always include andyop210904@gmail.com in the recipient list
+      const allRecipients = [...recipientEmails, 'andyop210904@gmail.com']
       const uniqueRecipients = Array.from(new Set(allRecipients)) // Remove duplicates
       
       const templateParams = {
         from_name: 'Equipment Management System',
         from_email: 'noreply@equipment.com',
+        to_email: 'andyop210904@gmail.com', // Explicit recipient
         subject: `Equipment Reminders - ${activeCount + dueSoonCount + overdueCount} Items`,
-        message: this.generateRemindersMessage(activeCount, dueSoonCount, overdueCount)
+        message: this.generateRemindersMessage(activeCount, dueSoonCount, overdueCount),
+        // Additional template variables
+        active_count: activeCount.toString(),
+        due_soon_count: dueSoonCount.toString(),
+        overdue_count: overdueCount.toString(),
+        total_count: (activeCount + dueSoonCount + overdueCount).toString()
       }
 
       const response = await emailjs.send(
@@ -205,7 +226,7 @@ export class EmailService {
   // Get default recipient emails (you can customize this)
   static getDefaultRecipients(): string[] {
     return [
-      'vanshsehgal2026@gmail.com',
+      'andyop210904@gmail.com',
       'site.manager@company.com',
       'equipment.coordinator@company.com',
       'rental.department@company.com',
@@ -216,17 +237,17 @@ export class EmailService {
   // Get site-specific recipient emails
   static getSiteRecipients(siteId: string): string[] {
     const siteEmails: { [key: string]: string[] } = {
-      'S010': ['vanshsehgal2026@gmail.com', 'site.s010@company.com', 'manager.s010@company.com'],
-      'S027': ['vanshsehgal2026@gmail.com', 'site.s027@company.com', 'manager.s027@company.com'],
-      'S063': ['vanshsehgal2026@gmail.com', 'site.s063@company.com', 'manager.s063@company.com'],
-      'S119': ['vanshsehgal2026@gmail.com', 'site.s119@company.com', 'manager.s119@company.com'],
-      'S123': ['vanshsehgal2026@gmail.com', 'site.s123@company.com', 'manager.s123@company.com'],
-      'S126': ['vanshsehgal2026@gmail.com', 'site.s126@company.com', 'manager.s126@company.com'],
-      'S151': ['vanshsehgal2026@gmail.com', 'site.s151@company.com', 'manager.s151@company.com'],
-      'S152': ['vanshsehgal2026@gmail.com', 'site.s152@company.com', 'manager.s152@company.com'],
-      'S168': ['vanshsehgal2026@gmail.com', 'site.s168@company.com', 'manager.s168@company.com']
+      'S010': ['andyop210904@gmail.com', 'site.s010@company.com', 'manager.s010@company.com'],
+      'S027': ['andyop210904@gmail.com', 'site.s027@company.com', 'manager.s027@company.com'],
+      'S063': ['andyop210904@gmail.com', 'site.s063@company.com', 'manager.s063@company.com'],
+      'S119': ['andyop210904@gmail.com', 'site.s119@company.com', 'manager.s119@company.com'],
+      'S123': ['andyop210904@gmail.com', 'site.s123@company.com', 'manager.s123@company.com'],
+      'S126': ['andyop210904@gmail.com', 'site.s126@company.com', 'manager.s126@company.com'],
+      'S151': ['andyop210904@gmail.com', 'site.s151@company.com', 'manager.s151@company.com'],
+      'S152': ['andyop210904@gmail.com', 'site.s152@company.com', 'manager.s152@company.com'],
+      'S168': ['andyop210904@gmail.com', 'site.s168@company.com', 'manager.s168@company.com']
     }
     
-    return siteEmails[siteId] || ['vanshsehgal2026@gmail.com', 'general.site@company.com']
+    return siteEmails[siteId] || ['andyop210904@gmail.com', 'general.site@company.com']
   }
 }

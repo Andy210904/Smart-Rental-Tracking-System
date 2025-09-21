@@ -78,7 +78,7 @@ export class EmailTest {
         emailjs.init(publicKey)
 
         const testParams = {
-          to_email: 'vanshsehgal2026@gmail.com',
+          to_email: 'andyop210904@gmail.com',
           equipment_id: 'TEST001',
           equipment_type: 'Test Equipment',
           site_id: 'TEST_SITE',

@@ -23,8 +23,9 @@ interface ForecastResponse {
   trend_strength: number
   total_predicted_demand: number
   average_daily_demand: number
-  peak_demand_day: ForecastData
-  low_demand_day: ForecastData
+  peak_demand_day?: ForecastData
+  low_demand_day?: ForecastData
+  min_demand_day?: ForecastData
   generated_at: string
 }
 
@@ -240,25 +241,25 @@ export default function DemandForecast({ daysAhead }: DemandForecastProps) {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div className="text-center">
             <p className="text-2xl font-bold text-blue-600">
-              {forecast.total_predicted_demand.toFixed(1)}
+              {(forecast.total_predicted_demand ?? 0).toFixed(1)}
             </p>
             <p className="text-sm text-gray-600">Total Predicted Demand ({daysAhead} days)</p>
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold text-green-600">
-              {forecast.average_daily_demand.toFixed(1)}
+              {(forecast.average_daily_demand ?? (forecast.total_predicted_demand ? forecast.total_predicted_demand / Math.max(1, daysAhead) : 0)).toFixed(1)}
             </p>
             <p className="text-sm text-gray-600">Daily Average</p>
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold text-purple-600">
-              {forecast.trend}
+              {forecast.trend ?? 'stable'}
             </p>
             <p className="text-sm text-gray-600">Demand Trend</p>
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold text-orange-600">
-              {(forecast.trend_strength * 100).toFixed(0)}%
+              {(((forecast.trend_strength ?? 0) * 100).toFixed(0))}%
             </p>
             <p className="text-sm text-gray-600">Trend Strength</p>
           </div>
@@ -271,10 +272,10 @@ export default function DemandForecast({ daysAhead }: DemandForecastProps) {
           <h4 className="text-sm font-medium text-green-900 mb-2">Peak Demand Day</h4>
           <div className="text-center">
             <p className="text-2xl font-bold text-green-600">
-              {forecast.peak_demand_day.predicted_demand}
+              {forecast.peak_demand_day?.predicted_demand ?? '-'}
             </p>
             <p className="text-sm text-green-700">
-              {forecast.peak_demand_day.date} ({forecast.peak_demand_day.day_of_week})
+              {forecast.peak_demand_day?.date ?? '-'} ({forecast.peak_demand_day?.day_of_week ?? '-'})
             </p>
           </div>
         </div>
@@ -283,10 +284,10 @@ export default function DemandForecast({ daysAhead }: DemandForecastProps) {
           <h4 className="text-sm font-medium text-red-900 mb-2">Low Demand Day</h4>
           <div className="text-center">
             <p className="text-2xl font-bold text-red-600">
-              {forecast.low_demand_day.predicted_demand}
+              {(forecast.low_demand_day?.predicted_demand ?? forecast.min_demand_day?.predicted_demand) ?? '-'}
             </p>
             <p className="text-sm text-red-700">
-              {forecast.low_demand_day.date} ({forecast.low_demand_day.day_of_week})
+              {(forecast.low_demand_day?.date ?? forecast.min_demand_day?.date) ?? '-'} ({(forecast.low_demand_day?.day_of_week ?? forecast.min_demand_day?.day_of_week) ?? '-'})
             </p>
           </div>
         </div>

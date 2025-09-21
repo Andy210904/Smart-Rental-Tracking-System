@@ -96,10 +96,13 @@ export default function Dashboard() {
 
   const loadDashboardData = async () => {
     try {
-      // Fetch dashboard data and equipment data in parallel
-      const [dashboardResponse, equipmentResponse] = await Promise.all([
+      // Fetch dashboard data, equipment data, active rentals, and overdue rentals in parallel
+      const [dashboardResponse, equipmentResponse, activeRentalsResponse, overdueRentalsResponse, dueSoonRentalsResponse] = await Promise.all([
         fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://cat-v7yf.onrender.com'}/dashboard`),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://cat-v7yf.onrender.com'}/equipment/`)
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://cat-v7yf.onrender.com'}/equipment/`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://cat-v7yf.onrender.com'}/rentals/active/detailed`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://cat-v7yf.onrender.com'}/rentals/overdue`),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://cat-v7yf.onrender.com'}/rentals/due-soon?days_ahead=7`)
       ])
       
       if (dashboardResponse.ok && equipmentResponse.ok) {
@@ -108,6 +111,27 @@ export default function Dashboard() {
         
         // Add equipment data to dashboard data
         dashboardData.equipment_list = equipmentData
+        
+        // If active rentals request succeeded, use that data
+        if (activeRentalsResponse.ok) {
+          const activeRentalsData = await activeRentalsResponse.json()
+          dashboardData.active_rentals_list = activeRentalsData
+          console.log('Loaded active rentals:', activeRentalsData.length)
+        }
+        
+        // If overdue rentals request succeeded, use that data
+        if (overdueRentalsResponse.ok) {
+          const overdueRentalsData = await overdueRentalsResponse.json()
+          dashboardData.overdue_rentals_list = overdueRentalsData
+          console.log('Loaded overdue rentals:', overdueRentalsData.length)
+        }
+        
+        // If due soon rentals request succeeded, use that data
+        if (dueSoonRentalsResponse.ok) {
+          const dueSoonRentalsData = await dueSoonRentalsResponse.json()
+          dashboardData.due_soon_rentals_list = dueSoonRentalsData
+          console.log('Loaded due soon rentals:', dueSoonRentalsData.length)
+        }
         
         setDashboardData(dashboardData)
         setLastUpdated(new Date())
@@ -122,13 +146,18 @@ export default function Dashboard() {
       setDashboardData({
         overview: {
           total_equipment: 0,
+          available_equipment: 0,
           active_rentals: 0,
+          overdue_rentals: 0,
           anomalies: 0,
           utilization_rate: 0
         },
         equipment_stats: null,
         anomalies: null,
-        recommendations: []
+        recommendations: [],
+        active_rentals_list: [],
+        overdue_rentals_list: [],
+        due_soon_rentals_list: []
       })
     } finally {
       setLoading(false)
@@ -297,28 +326,28 @@ export default function Dashboard() {
                 color="blue"
               />
               <DashboardCard
-                title="Active Rentals"
-                value={dashboardData?.overview?.active_rentals || 0}
-                icon="⏰"
+                title="Available Equipment"
+                value={dashboardData?.overview?.available_equipment || 0}
+                icon="✅"
                 trend="+5%"
                 trendDirection="up"
                 color="green"
               />
               <DashboardCard
-                title="Anomalies Detected"
-                value={dashboardData?.overview?.anomalies || 0}
-                icon="⚠️"
-                trend="-8%"
-                trendDirection="down"
-                color="red"
+                title="Active Rentals"
+                value={dashboardData?.overview?.active_rentals || 0}
+                icon="⏰"
+                trend="+8%"
+                trendDirection="up"
+                color="blue"
               />
               <DashboardCard
-                title="Utilization Rate"
-                value={`${dashboardData?.overview?.utilization_rate || 0}%`}
-                icon="📊"
-                trend="+3%"
-                trendDirection="up"
-                color="yellow"
+                title="Overdue Rentals"
+                value={dashboardData?.overview?.overdue_rentals || 0}
+                icon="⚠️"
+                trend="-2%"
+                trendDirection="down"
+                color="red"
               />
             </div>
 

@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react'
 interface Anomaly {
   equipment_id: string
   type: string
-  anomaly_type: string
+  alert_type: string
   severity: string
   anomaly_score: number
   site_id: string
@@ -85,22 +85,34 @@ export default function AnomalyAlerts() {
   }
 
   const getAnomalyTypeLabel = (type: string) => {
+    if (!type) return 'Unknown'
+    
     switch (type) {
       case 'high_idle_time':
         return 'High Idle Time'
       case 'low_utilization':
         return 'Low Utilization'
+      case 'high_usage':
+        return 'High Usage'
+      case 'overdue':
+        return 'Overdue'
       default:
         return type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
     }
   }
 
   const getAnomalyIcon = (type: string) => {
+    if (!type) return '❓'
+    
     switch (type) {
       case 'high_idle_time':
         return '⏰'
       case 'low_utilization':
         return '📉'
+      case 'high_usage':
+        return '🔥'
+      case 'overdue':
+        return '⏰'
       default:
         return '⚠️'
     }
@@ -263,7 +275,7 @@ export default function AnomalyAlerts() {
                 {/* Header */}
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex items-center space-x-2">
-                    <span className="text-2xl">{getAnomalyIcon(anomaly.anomaly_type)}</span>
+                    <span className="text-2xl">{getAnomalyIcon(anomaly.alert_type)}</span>
                     <div>
                       <h5 className="font-semibold text-gray-800">{anomaly.equipment_id}</h5>
                       <p className="text-sm text-gray-600 capitalize">{anomaly.type}</p>
@@ -277,7 +289,7 @@ export default function AnomalyAlerts() {
                 {/* Anomaly Type */}
                 <div className="mb-3">
                   <p className="text-sm font-medium text-gray-700">Issue Type</p>
-                  <p className="text-lg font-semibold text-gray-800">{getAnomalyTypeLabel(anomaly.anomaly_type)}</p>
+                  <p className="text-lg font-semibold text-gray-800">{getAnomalyTypeLabel(anomaly.alert_type)}</p>
                 </div>
                 
                 {/* Metrics Grid */}

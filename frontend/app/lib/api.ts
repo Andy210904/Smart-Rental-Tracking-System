@@ -99,6 +99,18 @@ export const rentalManagementApi = {
   getRentalsPaginated: (page: number = 1, limit: number = 10, status?: string) => 
     api.get(`/rentals/paginated?page=${page}&limit=${limit}${status ? `&status=${status}` : ''}`),
   
+  // Get active rentals with detailed equipment info
+  getActiveRentalsDetailed: () => api.get('/rentals/active/detailed'),
+  
+  // Get basic active rentals
+  getActiveRentals: () => api.get('/rentals/active'),
+  
+  // Get overdue rentals
+  getOverdueRentals: () => api.get('/rentals/overdue'),
+  
+  // Get due soon rentals
+  getDueSoonRentals: (days?: number) => api.get(`/rentals/due-soon${days ? `?days_ahead=${days}` : ''}`),
+  
   // Send reminders
   sendAllReminders: () => api.post('/rentals/send-all-reminders'),
   

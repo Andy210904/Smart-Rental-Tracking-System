@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    appDir: true,
-  },
   images: {
     unoptimized: true
   },
@@ -12,7 +9,7 @@ const nextConfig = {
       return [
         {
           source: '/api/:path*',
-          destination: 'http://localhost:8000/:path*',
+          destination: 'http://localhost:4000/:path*',
         },
       ]
     }
