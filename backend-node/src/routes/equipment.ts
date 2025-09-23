@@ -117,9 +117,24 @@ router.get('/paginated', async (req: Request, res: Response) => {
 
 router.get('/:id', async (req: Request, res: Response) => {
   const id = Number(req.params.id);
-  const item = await prisma.equipment.findUnique({ where: { id } });
-  if (!item) return res.status(404).json({ detail: 'Equipment not found' });
-  res.json(item);
+  
+  // Validate that id is a valid number
+  if (isNaN(id) || id <= 0) {
+    return res.status(400).json({ detail: 'Invalid equipment ID' });
+  }
+  
+  try {
+    const item = await prisma.equipment.findUnique({ 
+      where: { 
+        id: id 
+      } 
+    });
+    if (!item) return res.status(404).json({ detail: 'Equipment not found' });
+    res.json(item);
+  } catch (error) {
+    console.error('Error fetching equipment:', error);
+    res.status(500).json({ detail: 'Internal server error' });
+  }
 });
 
 router.post('/', async (req: Request, res: Response) => {
@@ -141,23 +156,86 @@ router.post('/', async (req: Request, res: Response) => {
 
 router.put('/:id', async (req: Request, res: Response) => {
   const id = Number(req.params.id);
+  
+  // Validate that id is a valid number
+  if (isNaN(id) || id <= 0) {
+    return res.status(400).json({ detail: 'Invalid equipment ID' });
+  }
+  
   const parsed = EquipmentUpdate.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  
   try {
-    const updated = await prisma.equipment.update({ where: { id }, data: parsed.data });
+    const updated = await prisma.equipment.update({ 
+      where: { 
+        id: id 
+      }, 
+      data: parsed.data 
+    });
     return res.json(updated);
   } catch (e) {
+    console.error('Error updating equipment:', e);
     return res.status(404).json({ detail: 'Equipment not found' });
   }
 });
 
-router.delete('/:id', async (req: Request, res: Response) => {
-  const id = Number(req.params.id);
+router.delete('/:equipmentCode', async (req: Request, res: Response) => {
+  const equipmentCode = req.params.equipmentCode;
+  
+  console.log('Delete request received for equipment_id:', equipmentCode);
+  
+  if (!equipmentCode || typeof equipmentCode !== 'string') {
+    console.log('Invalid equipment_id - must be a string');
+    return res.status(400).json({ detail: 'Invalid equipment ID - must be a string' });
+  }
+  
   try {
-    await prisma.equipment.delete({ where: { id } });
-    return res.status(204).send();
-  } catch (e) {
-    return res.status(404).json({ detail: 'Equipment not found' });
+    // First, find the equipment to get its numeric ID
+    const equipment = await prisma.equipment.findUnique({
+      where: { equipment_id: equipmentCode },
+      include: {
+        rentals: true,
+        usage_logs: true,
+        maintenance_records: true
+      }
+    });
+
+    if (!equipment) {
+      return res.status(404).json({ detail: 'Equipment not found' });
+    }
+
+    // Check for related records
+    const relatedRecords = [];
+    if (equipment.rentals.length > 0) {
+      relatedRecords.push(`${equipment.rentals.length} rental record(s)`);
+    }
+    if (equipment.usage_logs.length > 0) {
+      relatedRecords.push(`${equipment.usage_logs.length} usage log(s)`);
+    }
+    if (equipment.maintenance_records.length > 0) {
+      relatedRecords.push(`${equipment.maintenance_records.length} maintenance record(s)`);
+    }
+
+    if (relatedRecords.length > 0) {
+      return res.status(400).json({ 
+        detail: `Cannot delete equipment. It has related records: ${relatedRecords.join(', ')}. Please remove or transfer these records first.` 
+      });
+    }
+
+    console.log('Attempting to delete equipment with equipment_id:', equipmentCode);
+    const result = await prisma.equipment.delete({ 
+      where: { 
+        equipment_id: equipmentCode 
+      } 
+    });
+    console.log('Equipment deleted successfully:', result);
+    return res.status(200).json({ message: 'Equipment deleted successfully' });
+  } catch (e: any) {
+    console.error('Error deleting equipment:', e);
+    if (e.code === 'P2003') {
+      return res.status(400).json({ detail: 'Cannot delete equipment due to existing related records' });
+    }
+    return res.status(500).json({ detail: 'Internal server error' });
   }
 });
 

@@ -7,6 +7,9 @@ import { Badge } from './ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { equipmentManagementApi, rentalManagementApi } from '../lib/api'
 import { EmailService, EquipmentAlert } from '../lib/emailService'
+import AnomalyAlerts from './AnomalyAlerts'
+import DemandForecast from './DemandForecast'
+import EquipmentStats from './EquipmentStats'
 import {
   Clock,
   AlertTriangle,
@@ -793,9 +796,11 @@ export default function RentalDashboard({ dashboardData }: Props) {
         notes: newEquipment.notes || null
       })
 
-      if (response.status === 200) {
-        showCustomAlert('Equipment created successfully!', 'success')
+      if (response.status === 200 || response.status === 201) {
+        // Close modal immediately
         setShowAddModal(false)
+        
+        // Reset form data
         setNewEquipment({
           equipment_id: '',
           type: '',
@@ -803,12 +808,34 @@ export default function RentalDashboard({ dashboardData }: Props) {
           site_id: '',
           notes: ''
         })
+        
+        // Show success message after modal closes
+        setTimeout(() => {
+          showCustomAlert('Equipment added successfully!', 'success')
+        }, 100)
+        
         // Refresh dashboard data
         triggerDashboardRefresh()
       }
     } catch (error) {
       console.error('Error creating equipment:', error)
-      showCustomAlert(`Error creating equipment: ${error.response?.data?.detail || 'Unknown error'}`, 'error')
+      
+      // Close modal immediately on error
+      setShowAddModal(false)
+      
+      // Reset form data
+      setNewEquipment({
+        equipment_id: '',
+        type: '',
+        status: 'available',
+        site_id: '',
+        notes: ''
+      })
+      
+      // Show error message after modal closes
+      setTimeout(() => {
+        showCustomAlert(`Error creating equipment: ${error.response?.data?.detail || 'Unknown error'}`, 'error')
+      }, 100)
     }
   }
 
@@ -2613,10 +2640,10 @@ export default function RentalDashboard({ dashboardData }: Props) {
               )}
             </TabsContent>
 
-            {/* Enhanced Analytics Tab with Interactive Charts */}
-            <TabsContent value="analytics" className="space-y-4">
+            {/* Enhanced Analytics Tab with ML-Powered Components */}
+            <TabsContent value="analytics" className="space-y-6">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium">Rental Analytics</h3>
+                <h3 className="text-lg font-medium">ML-Powered Analytics Dashboard</h3>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm">
                     <Download className="w-4 h-4 mr-2" />
@@ -2628,6 +2655,15 @@ export default function RentalDashboard({ dashboardData }: Props) {
                   </Button>
                 </div>
               </div>
+
+              {/* Anomaly Detection Section */}
+              <AnomalyAlerts />
+
+              {/* Equipment Performance Statistics */}
+              <EquipmentStats />
+
+              {/* Demand Forecasting Section */}
+              <DemandForecast daysAhead={30} />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Card>

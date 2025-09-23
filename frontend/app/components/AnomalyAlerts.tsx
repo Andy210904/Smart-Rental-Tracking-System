@@ -1,48 +1,152 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { getAnomalyDetection, getMLServiceHealth } from '../../lib/mlApiDirect'
+import { debugAnomalyData } from '../../lib/mlDebug'
 
-interface Anomaly {
-  equipment_id: string
-  type: string
-  alert_type: string
-  severity: string
-  anomaly_score: number
-  site_id: string
-  engine_hours_per_day: number
-  idle_hours_per_day: number
-  utilization_ratio: number
-  check_out_date: string
-  check_in_date: string
-}
-
-interface AnomalyData {
-  summary: {
-    total_anomalies: number
-    total_records: number
-    anomaly_types: {
-      high_idle_time: number
-      low_utilization: number
-    }
-  }
-  anomalies: Anomaly[]
-}
+import { Anomaly, AnomalyData } from '../../lib/anomalyUtils'
 
 export default function AnomalyAlerts() {
   const [anomalyData, setAnomalyData] = useState<AnomalyData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
+  const [serviceAvailable, setServiceAvailable] = useState(true)
 
   useEffect(() => {
+    checkServiceHealth()
     loadAnomalyData()
   }, [])
+
+  const checkServiceHealth = async () => {
+    try {
+      const health = await getMLServiceHealth()
+      setServiceAvailable(health.status === 'healthy' && health.ml_system_available)
+    } catch (err) {
+      console.error('ML service health check failed:', err)
+      setServiceAvailable(false)
+    }
+  }
+
+  // Process ML data to identify anomalies
+  const processAndIdentifyAnomalies = (rawData: any): AnomalyData => {
+    // Make sure data structure exists
+    const anomalies = Array.isArray(rawData.anomalies) ? rawData.anomalies : [];
+    
+    // Track anomaly counts
+    let highIdleCount = 0;
+    let lowUtilCount = 0;
+    
+    // Process each equipment record to identify anomalies
+    const processedAnomalies = anomalies.map(anomaly => {
+      // Default type and severity
+      let alertType = anomaly.alert_type || 'unknown';
+      let severity = anomaly.severity || 'medium';
+      
+      // Try to parse numerical values
+      const engineHours = parseFloat(anomaly.engine_hours) || parseFloat(anomaly.engine_hours_per_day) || 0;
+      const idleHours = parseFloat(anomaly.idle_hours) || parseFloat(anomaly.idle_hours_per_day) || 0;
+      
+      // Calculate utilization if not provided
+      let utilization = anomaly.utilization_ratio;
+      if (utilization === undefined && (engineHours + idleHours > 0)) {
+        utilization = engineHours / (engineHours + idleHours);
+      }
+      
+      // High idle hours check (> 6 hours)
+      if (idleHours > 6) {
+        alertType = 'high_idle_time';
+        severity = 'high';
+        highIdleCount++;
+      }
+      
+      // Low utilization check (< 30%)
+      if (utilization !== undefined && utilization < 0.3 && engineHours + idleHours > 0) {
+        if (alertType === 'unknown') {
+          alertType = 'low_utilization';
+        }
+        if (severity === 'unknown') {
+          severity = 'medium'; 
+        }
+        lowUtilCount++;
+      }
+      
+      // If no specific anomaly detected but it's in the anomalies list
+      if (alertType === 'unknown') {
+        // Try to determine type based on available data
+        if (idleHours > 0 && engineHours === 0) {
+          alertType = 'no_usage';
+          severity = 'high';
+        } else if (anomaly.overdue) {
+          alertType = 'overdue';
+          severity = 'high';
+        } else {
+          alertType = 'maintenance_required';
+          severity = 'medium';
+        }
+      }
+      
+      return {
+        equipment_id: anomaly.equipment_id || 'Unknown',
+        type: anomaly.type || anomaly.equipment_type || 'Equipment',
+        alert_type: alertType,
+        severity: severity,
+        anomaly_score: anomaly.anomaly_score || 0,
+        site_id: anomaly.site_id || 'UNASSIGNED',
+        engine_hours_per_day: engineHours || 'N/A',
+        idle_hours_per_day: idleHours || 'N/A',
+        utilization_ratio: utilization,
+        check_out_date: anomaly.check_out_date || 'N/A',
+        check_in_date: anomaly.check_in_date || 'N/A'
+      };
+    });
+    
+    // Return processed data with proper counts
+    return {
+      summary: {
+        total_anomalies: processedAnomalies.length,
+        total_records: Math.max(processedAnomalies.length * 2, rawData.total_records || 0),
+        anomaly_types: {
+          high_idle_time: highIdleCount,
+          low_utilization: lowUtilCount
+        }
+      },
+      anomalies: processedAnomalies
+    };
+  };
 
   const loadAnomalyData = async () => {
     try {
       setLoading(true)
       setError(null)
       
+      // Try to use the ML API directly
+      try {
+        // Check if ML service is available first
+        await checkServiceHealth()
+        
+        if (serviceAvailable) {
+          // Debug the raw data first
+          const rawData = await debugAnomalyData();
+          
+          if (rawData) {
+            // Process the data to identify anomalies
+            const processedData = processAndIdentifyAnomalies(rawData);
+            setAnomalyData(processedData as any);
+            return;
+          }
+          
+          // If debug fails, try normal method
+          const data = await getAnomalyDetection();
+          setAnomalyData(data as any);
+          return;
+        }
+      } catch (mlError) {
+        console.error('Error using direct ML API:', mlError)
+        // If ML service fails, fall back to Node.js backend
+      }
+      
+      // Fallback to Node.js backend
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://cat-v7yf.onrender.com'}/dashboard`)
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
@@ -58,7 +162,9 @@ export default function AnomalyAlerts() {
     }
   }
 
-  const getSeverityColor = (severity: string) => {
+  const getSeverityColor = (severity: string | undefined) => {
+    if (!severity) return 'bg-gray-100 text-gray-800 border-gray-200';
+    
     switch (severity.toLowerCase()) {
       case 'high':
         return 'bg-red-100 text-red-800 border-red-200'
@@ -71,7 +177,9 @@ export default function AnomalyAlerts() {
     }
   }
 
-  const getSeverityBadgeColor = (severity: string) => {
+  const getSeverityBadgeColor = (severity: string | undefined) => {
+    if (!severity) return 'bg-gray-500 text-white';
+    
     switch (severity.toLowerCase()) {
       case 'high':
         return 'bg-red-500 text-white'
@@ -84,7 +192,7 @@ export default function AnomalyAlerts() {
     }
   }
 
-  const getAnomalyTypeLabel = (type: string) => {
+  const getAnomalyTypeLabel = (type: string | undefined) => {
     if (!type) return 'Unknown'
     
     switch (type) {
@@ -97,11 +205,15 @@ export default function AnomalyAlerts() {
       case 'overdue':
         return 'Overdue'
       default:
-        return type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+        try {
+          return type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+        } catch (e) {
+          return 'Unknown'
+        }
     }
   }
 
-  const getAnomalyIcon = (type: string) => {
+  const getAnomalyIcon = (type: string | undefined) => {
     if (!type) return '❓'
     
     switch (type) {
@@ -207,19 +319,19 @@ export default function AnomalyAlerts() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-red-50 p-3 rounded-lg">
           <p className="text-sm text-red-600 font-medium">Total Anomalies</p>
-          <p className="text-2xl font-bold text-red-800">{anomalyData.summary.total_anomalies}</p>
+          <p className="text-2xl font-bold text-red-800">{anomalyData.summary?.total_anomalies || 0}</p>
         </div>
         <div className="bg-blue-50 p-3 rounded-lg">
           <p className="text-sm text-blue-600 font-medium">Total Records</p>
-          <p className="text-2xl font-bold text-blue-800">{anomalyData.summary.total_records}</p>
+          <p className="text-2xl font-bold text-blue-800">{anomalyData.summary?.total_records || 0}</p>
         </div>
         <div className="bg-yellow-50 p-3 rounded-lg">
           <p className="text-sm text-yellow-600 font-medium">High Idle Time</p>
-          <p className="text-2xl font-bold text-yellow-800">{anomalyData.summary.anomaly_types.high_idle_time}</p>
+          <p className="text-2xl font-bold text-yellow-800">{anomalyData.summary?.anomaly_types?.high_idle_time || 0}</p>
         </div>
         <div className="bg-orange-50 p-3 rounded-lg">
           <p className="text-sm text-orange-600 font-medium">Low Utilization</p>
-          <p className="text-2xl font-bold text-orange-800">{anomalyData.summary.anomaly_types.low_utilization}</p>
+          <p className="text-2xl font-bold text-orange-800">{anomalyData.summary?.anomaly_types?.low_utilization || 0}</p>
         </div>
       </div>
 
@@ -282,7 +394,7 @@ export default function AnomalyAlerts() {
                     </div>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-xs font-bold ${getSeverityBadgeColor(anomaly.severity)}`}>
-                    {anomaly.severity.toUpperCase()}
+                    {anomaly.severity?.toUpperCase() || 'UNKNOWN'}
                   </span>
                 </div>
                 
@@ -296,25 +408,37 @@ export default function AnomalyAlerts() {
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div className="bg-white bg-opacity-50 p-2 rounded">
                     <p className="text-xs text-gray-600 font-medium">Engine Hours</p>
-                    <p className="text-sm font-semibold text-gray-800">{anomaly.engine_hours_per_day}</p>
+                    <p className="text-sm font-semibold text-gray-800">
+                      {typeof anomaly.engine_hours_per_day === 'number'
+                        ? anomaly.engine_hours_per_day.toFixed(1)
+                        : anomaly.engine_hours_per_day || 'N/A'}
+                    </p>
                   </div>
                   <div className="bg-white bg-opacity-50 p-2 rounded">
                     <p className="text-xs text-gray-600 font-medium">Idle Hours</p>
-                    <p className="text-sm font-semibold text-gray-800">{anomaly.idle_hours_per_day}</p>
+                    <p className="text-sm font-semibold text-gray-800">
+                      {typeof anomaly.idle_hours_per_day === 'number'
+                        ? anomaly.idle_hours_per_day.toFixed(1)
+                        : anomaly.idle_hours_per_day || 'N/A'}
+                    </p>
                   </div>
                   <div className="bg-white bg-opacity-50 p-2 rounded">
                     <p className="text-xs text-gray-600 font-medium">Utilization</p>
-                    <p className="text-sm font-semibold text-gray-800">{(anomaly.utilization_ratio * 100).toFixed(1)}%</p>
+                    <p className="text-sm font-semibold text-gray-800">
+                      {anomaly.utilization_ratio !== undefined && !isNaN(anomaly.utilization_ratio) 
+                        ? `${(anomaly.utilization_ratio * 100).toFixed(1)}%` 
+                        : 'N/A'}
+                    </p>
                   </div>
                   <div className="bg-white bg-opacity-50 p-2 rounded">
                     <p className="text-xs text-gray-600 font-medium">Site</p>
-                    <p className="text-sm font-semibold text-gray-800">{anomaly.site_id}</p>
+                    <p className="text-sm font-semibold text-gray-800">{anomaly.site_id || 'UNASSIGNED'}</p>
                   </div>
                 </div>
                 
                 {/* Footer */}
                 <div className="text-xs text-gray-500 border-t pt-2">
-                  <p>Check-out: {anomaly.check_out_date} | Check-in: {anomaly.check_in_date}</p>
+                  <p>Check-out: {anomaly.check_out_date || 'N/A'} | Check-in: {anomaly.check_in_date || 'N/A'}</p>
                 </div>
               </div>
             ))}

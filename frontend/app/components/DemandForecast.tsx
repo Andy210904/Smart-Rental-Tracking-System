@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
+import { getDemandForecast, getMLServiceHealth } from '../../lib/mlApiDirect'
 
 interface DemandForecastProps {
   daysAhead: number
@@ -35,57 +36,59 @@ export default function DemandForecast({ daysAhead }: DemandForecastProps) {
   const [selectedEquipment, setSelectedEquipment] = useState<string>('all')
   const [selectedSite, setSelectedSite] = useState<string>('all')
   const [error, setError] = useState<string | null>(null)
+  const [serviceAvailable, setServiceAvailable] = useState(true)
 
   // Available equipment types and sites
   const equipmentTypes = ['Excavator', 'Bulldozer', 'Crane', 'Grader', 'Loader']
   const siteIds = ['S001', 'S002', 'S003', 'S004', 'S005', 'S006', 'S007', 'S008', 'S009', 'S010']
 
   useEffect(() => {
+    checkServiceHealth()
     loadForecast()
   }, [selectedEquipment, selectedSite, daysAhead])
+
+  const checkServiceHealth = async () => {
+    try {
+      const health = await getMLServiceHealth()
+      setServiceAvailable(health.status === 'healthy' && health.ml_system_available)
+    } catch (err) {
+      console.error('ML service health check failed:', err)
+      setServiceAvailable(false)
+    }
+  }
 
   const loadForecast = async () => {
     setLoading(true)
     setError(null)
-    
+
     try {
-      let url = `${process.env.NEXT_PUBLIC_API_URL || 'https://cat-v7yf.onrender.com'}/ml/demand-forecast`
-      const params = new URLSearchParams()
-      
-      if (selectedEquipment !== 'all') {
-        params.append('equipment_type', selectedEquipment)
-      }
-      if (selectedSite !== 'all') {
-        params.append('site_id', selectedSite)
-      }
-      params.append('days_ahead', daysAhead.toString())
-      
-      if (params.toString()) {
-        url += '?' + params.toString()
+      // Create request params
+      const requestParams = {
+        days_ahead: daysAhead,
+        equipment_type: selectedEquipment !== 'all' ? selectedEquipment : undefined,
+        site_id: selectedSite !== 'all' ? selectedSite : undefined
       }
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
+      // Check if ML service is available
+      await checkServiceHealth()
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+      if (serviceAvailable) {
+        // Use our direct ML API service
+        const data = await getDemandForecast(requestParams)
+
+        if (data.error) {
+          throw new Error(data.error)
+        }
+
+        setForecast(data)
+      } else {
+        // Fallback to mock data if ML service is not available
+        throw new Error('ML service is not available')
       }
-
-      const data = await response.json()
-      
-      if (data.error) {
-        throw new Error(data.error)
-      }
-
-      setForecast(data)
     } catch (error) {
       console.error('Error loading forecast:', error)
       setError(error instanceof Error ? error.message : 'Failed to load forecast')
-      
+
       // Fallback to mock data if backend is not available
       generateMockForecast()
     } finally {
@@ -105,13 +108,13 @@ export default function DemandForecast({ daysAhead }: DemandForecastProps) {
         const month = date.getMonth() + 1
         const isSummer = month >= 6 && month <= 8
         const isWinter = month === 12 || month <= 2
-        
+
         // Base demand with realistic variations
         let baseDemand = 3 + Math.random() * 4
         if (isWeekend) baseDemand *= 0.6
         if (isSummer) baseDemand *= 1.2
         if (isWinter) baseDemand *= 0.8
-        
+
         return {
           date: date.toLocaleDateString(),
           day_of_week: date.toLocaleDateString('en-US', { weekday: 'short' }),
@@ -150,7 +153,7 @@ export default function DemandForecast({ daysAhead }: DemandForecastProps) {
       <div className="text-center text-red-500 py-8">
         <p className="text-lg font-medium mb-2">Error loading forecast</p>
         <p className="text-sm">{error}</p>
-        <button 
+        <button
           onClick={loadForecast}
           className="mt-4 px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700"
         >
@@ -173,7 +176,7 @@ export default function DemandForecast({ daysAhead }: DemandForecastProps) {
     if (selectedEquipment === 'all' && selectedSite === 'all') {
       // For bulk forecast, show equipment type comparison
       const equipmentData = equipmentTypes.map(type => {
-        const typeForecasts = forecast.forecasts.filter(f => 
+        const typeForecasts = forecast.forecasts.filter(f =>
           !forecast.equipment_type || f.predicted_demand > 0
         )
         return {
@@ -213,7 +216,7 @@ export default function DemandForecast({ daysAhead }: DemandForecastProps) {
             ))}
           </select>
         </div>
-        
+
         <div>
           <label className="text-sm font-medium text-gray-700">Site:</label>
           <select
@@ -230,7 +233,7 @@ export default function DemandForecast({ daysAhead }: DemandForecastProps) {
 
         <button
           onClick={loadForecast}
-          className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 text-sm"
+          className="px-4 py-2 mt-5 bg-primary-600 text-white rounded hover:bg-primary-700 text-sm"
         >
           Refresh Forecast
         </button>
@@ -279,7 +282,7 @@ export default function DemandForecast({ daysAhead }: DemandForecastProps) {
             </p>
           </div>
         </div>
-        
+
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <h4 className="text-sm font-medium text-red-900 mb-2">Low Demand Day</h4>
           <div className="text-center">
@@ -336,11 +339,10 @@ export default function DemandForecast({ daysAhead }: DemandForecastProps) {
                 <div key={item.name} className="bg-white rounded-lg p-4 border border-gray-200">
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-gray-900">{item.name}</span>
-                    <span className={`text-sm px-2 py-1 rounded-full ${
-                      item.trend === 1 ? 'bg-green-100 text-green-800' :
+                    <span className={`text-sm px-2 py-1 rounded-full ${item.trend === 1 ? 'bg-green-100 text-green-800' :
                       item.trend === -1 ? 'bg-red-100 text-red-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
+                        'bg-gray-100 text-gray-800'
+                      }`}>
                       {item.trend === 1 ? '↗ Increasing' : item.trend === -1 ? '↘ Decreasing' : '→ Stable'}
                     </span>
                   </div>

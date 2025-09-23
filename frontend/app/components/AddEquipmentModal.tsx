@@ -45,6 +45,7 @@ export default function AddEquipmentModal({ isOpen, onClose, onSuccess }: AddEqu
   const [formData, setFormData] = useState<EquipmentFormData>(initialFormData)
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false)
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -105,11 +106,19 @@ export default function AddEquipmentModal({ isOpen, onClose, onSuccess }: AddEqu
 
       await equipmentApi.create(submitData)
       
-      // Reset form and close modal
+      // Show success popup
+      setShowSuccessPopup(true)
+      
+      // Reset form
       setFormData(initialFormData)
       setErrors({})
-      onSuccess()
-      onClose()
+      
+      // Hide success popup and close modal after 2 seconds
+      setTimeout(() => {
+        setShowSuccessPopup(false)
+        onSuccess()
+        onClose()
+      }, 2000)
     } catch (error: any) {
       console.error('Error creating equipment:', error)
       if (error.response?.data?.detail) {
@@ -131,7 +140,8 @@ export default function AddEquipmentModal({ isOpen, onClose, onSuccess }: AddEqu
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <>
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
@@ -404,6 +414,24 @@ export default function AddEquipmentModal({ isOpen, onClose, onSuccess }: AddEqu
           </div>
         </form>
       </div>
-    </div>
+      </div>
+      
+      {/* Success Popup */}
+      {showSuccessPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4 transform animate-in fade-in-0 zoom-in-95 duration-200">
+            <div className="flex items-center justify-center mb-4">
+              <div className="bg-green-100 rounded-full p-3">
+                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">Success!</h3>
+            <p className="text-gray-600 text-center">Equipment added successfully</p>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
