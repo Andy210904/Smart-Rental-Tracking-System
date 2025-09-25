@@ -12,10 +12,31 @@ export default function AnomalyAlerts() {
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [serviceAvailable, setServiceAvailable] = useState(true)
+  const [databaseChangeNotification, setDatabaseChangeNotification] = useState<string | null>(null)
+  const [lastDatabaseChange, setLastDatabaseChange] = useState<string | null>(null)
 
   useEffect(() => {
     checkServiceHealth()
     loadAnomalyData()
+    
+    let interval: NodeJS.Timeout | null = null
+    
+    // Start checking for database changes after initial load
+    const startMonitoring = setTimeout(() => {
+      checkDatabaseStatus()
+      
+      // Set up polling for database changes (less frequent to reduce overhead)
+      interval = setInterval(() => {
+        checkDatabaseStatus()
+      }, 10000) // Check every 10 seconds
+    }, 5000) // Wait 5 seconds before starting to monitor for changes
+    
+    return () => {
+      clearTimeout(startMonitoring)
+      if (interval) {
+        clearInterval(interval)
+      }
+    }
   }, [])
 
   const checkServiceHealth = async () => {
@@ -28,63 +49,78 @@ export default function AnomalyAlerts() {
     }
   }
 
+  const checkDatabaseStatus = async () => {
+    try {
+      const response = await fetch('http://localhost:8001/ml/database-status')
+      if (response.ok) {
+        const dbStatus = await response.json()
+        
+        // Only show notification if there's a genuinely new database change that's recent
+        if (dbStatus.last_change && 
+            dbStatus.last_change !== lastDatabaseChange && 
+            !databaseChangeNotification) { // Don't show if already showing a notification
+          
+          // Check if the change was recent (within last 2 minutes)
+          const changeTime = new Date(dbStatus.last_change)
+          const now = new Date()
+          const timeDiff = now.getTime() - changeTime.getTime()
+          const twoMinutesInMs = 2 * 60 * 1000
+          
+          if (timeDiff <= twoMinutesInMs) {
+            setLastDatabaseChange(dbStatus.last_change)
+            const timeString = changeTime.toLocaleTimeString()
+            setDatabaseChangeNotification(`Database updated at ${timeString} - ML system reloaded`)
+            
+            // Clear notification after 5 seconds
+            setTimeout(() => {
+              setDatabaseChangeNotification(null)
+            }, 5000)
+            
+            // Reload anomaly data to show updated results
+            setTimeout(() => {
+              loadAnomalyData()
+            }, 1500)
+          } else {
+            // Just update the last change without showing notification for old changes
+            setLastDatabaseChange(dbStatus.last_change)
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Database status check failed:', err)
+    }
+  }
+
   // Process ML data to identify anomalies
   const processAndIdentifyAnomalies = (rawData: any): AnomalyData => {
     // Make sure data structure exists
     const anomalies = Array.isArray(rawData.anomalies) ? rawData.anomalies : [];
     
-    // Track anomaly counts
-    let highIdleCount = 0;
-    let lowUtilCount = 0;
+    // Track anomaly counts by counting existing alert types
+    const anomalyCounts = {
+      high_idle_time: 0,
+      low_utilization: 0,
+      no_usage: 0,
+      overdue: 0
+    };
     
-    // Process each equipment record to identify anomalies
+    // Process each equipment record to format anomaly data
     const processedAnomalies = anomalies.map(anomaly => {
-      // Default type and severity
-      let alertType = anomaly.alert_type || 'unknown';
-      let severity = anomaly.severity || 'medium';
+      // Use the alert_type provided by the ML service
+      const alertType = anomaly.alert_type || 'unknown';
+      const severity = anomaly.severity || 'medium';
+      
+      // Count this anomaly type
+      if (anomalyCounts.hasOwnProperty(alertType)) {
+        anomalyCounts[alertType]++;
+      }
       
       // Try to parse numerical values
       const engineHours = parseFloat(anomaly.engine_hours) || parseFloat(anomaly.engine_hours_per_day) || 0;
       const idleHours = parseFloat(anomaly.idle_hours) || parseFloat(anomaly.idle_hours_per_day) || 0;
       
-      // Calculate utilization if not provided
-      let utilization = anomaly.utilization_ratio;
-      if (utilization === undefined && (engineHours + idleHours > 0)) {
-        utilization = engineHours / (engineHours + idleHours);
-      }
-      
-      // High idle hours check (> 6 hours)
-      if (idleHours > 6) {
-        alertType = 'high_idle_time';
-        severity = 'high';
-        highIdleCount++;
-      }
-      
-      // Low utilization check (< 30%)
-      if (utilization !== undefined && utilization < 0.3 && engineHours + idleHours > 0) {
-        if (alertType === 'unknown') {
-          alertType = 'low_utilization';
-        }
-        if (severity === 'unknown') {
-          severity = 'medium'; 
-        }
-        lowUtilCount++;
-      }
-      
-      // If no specific anomaly detected but it's in the anomalies list
-      if (alertType === 'unknown') {
-        // Try to determine type based on available data
-        if (idleHours > 0 && engineHours === 0) {
-          alertType = 'no_usage';
-          severity = 'high';
-        } else if (anomaly.overdue) {
-          alertType = 'overdue';
-          severity = 'high';
-        } else {
-          alertType = 'maintenance_required';
-          severity = 'medium';
-        }
-      }
+      // Use utilization from ML service
+      const utilization = anomaly.utilization || anomaly.utilization_ratio;
       
       return {
         equipment_id: anomaly.equipment_id || 'Unknown',
@@ -99,17 +135,14 @@ export default function AnomalyAlerts() {
         check_out_date: anomaly.check_out_date || 'N/A',
         check_in_date: anomaly.check_in_date || 'N/A'
       };
-    });
+    }).filter(anomaly => anomaly.alert_type !== 'unknown'); // Filter out unknown anomalies
     
     // Return processed data with proper counts
     return {
       summary: {
         total_anomalies: processedAnomalies.length,
-        total_records: Math.max(processedAnomalies.length * 2, rawData.total_records || 0),
-        anomaly_types: {
-          high_idle_time: highIdleCount,
-          low_utilization: lowUtilCount
-        }
+        total_records: rawData.summary?.total_records || rawData.total_records || 0,
+        anomaly_types: anomalyCounts
       },
       anomalies: processedAnomalies
     };
@@ -305,6 +338,24 @@ export default function AnomalyAlerts() {
 
   return (
     <div className="card">
+      {/* Database Change Notification */}
+      {databaseChangeNotification && (
+        <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded-lg flex items-center">
+          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span>{databaseChangeNotification}</span>
+          <button 
+            onClick={() => setDatabaseChangeNotification(null)}
+            className="ml-auto text-green-600 hover:text-green-800"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-semibold">Anomaly Detection Alerts</h3>
         <button 

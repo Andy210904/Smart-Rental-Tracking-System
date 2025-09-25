@@ -79,9 +79,7 @@ class SmartMLSystem:
         """Get the path to the database file"""
         # Try different possible database paths - prioritize Python backend database
         possible_db_paths = [
-            os.path.join(os.path.dirname(__file__), '..', 'backend', 'app', 'rental.db'),
             os.path.join(os.path.dirname(__file__), '..', 'database', 'rental.db'),
-            os.path.join(os.path.dirname(__file__), '..', 'backend-node', 'prisma', 'dev.db'),
         ]
         
         for db_path in possible_db_paths:
@@ -100,7 +98,7 @@ class SmartMLSystem:
         try:
             conn = sqlite3.connect(db_path)
             
-            # Query to get equipment data with rental information
+            # Query to get equipment data for active rentals only (checked out but not returned)
             query = """
             SELECT 
                 e.equipment_id as "Equipment ID",
@@ -114,6 +112,9 @@ class SmartMLSystem:
                 e.last_operator_id as "Last Operator ID",
                 e.status as "Status"
             FROM Equipment e
+            WHERE e.check_out_date IS NOT NULL 
+            AND (e.check_in_date IS NULL OR e.check_in_date = '')
+            AND e.status != 'Available'
             """
             
             db_data = pd.read_sql_query(query, conn)
@@ -488,12 +489,23 @@ class SmartMLSystem:
         print(f"✅ Trained {len(self.site_specific_models)} site-specific models")
     
     def detect_anomalies(self, equipment_id: str = None) -> Dict:
-        """Detect anomalies in equipment usage using real-time database data"""
+        """Detect anomalies in equipment usage using real-time database data for active rentals only"""
         if not self.models_trained:
             return {"error": "Models not trained"}
         
         try:
-            # Load real-time data from database
+            # Get total equipment count for frontend display
+            db_path = self._get_database_path()
+            total_equipment_count = 151  # Default fallback
+            if db_path:
+                try:
+                    conn = sqlite3.connect(db_path)
+                    total_equipment_count = conn.execute("SELECT COUNT(*) FROM Equipment").fetchone()[0]
+                    conn.close()
+                except Exception as e:
+                    print(f"Error getting total equipment count: {e}")
+            
+            # Load real-time data from database (active rentals only)
             db_data = self._load_database_data()
             
             if db_data is None or len(db_data) == 0:
@@ -525,31 +537,55 @@ class SmartMLSystem:
             if len(feature_data) == 0:
                 return {"error": "No valid data for anomaly detection"}
             
-            # Detect anomalies using trained model
-            anomaly_scores = self.anomaly_detector.decision_function(feature_data)
-            anomaly_predictions = self.anomaly_detector.predict(feature_data)
-            
-            # Find anomalous records
-            anomalous_indices = np.where(anomaly_predictions == -1)[0]
+            # Use rule-based anomaly detection for business logic
             anomalies = []
             
-            for idx in anomalous_indices:
-                record = equipment_data.iloc[feature_data.index[idx]]
-                anomalies.append({
-                    "equipment_id": record['Equipment ID'],
-                    "equipment_type": record['Type'],
-                    "site_id": record['User ID'] if pd.notna(record['User ID']) else 'UNASSIGNED',
-                    "anomaly_score": float(anomaly_scores[idx]),
-                    "engine_hours": float(record['Engine Hours/Day']),
-                    "idle_hours": float(record['Idle Hours/Day']),
-                    "utilization": float(record['utilization_ratio']),
-                    "efficiency": float(record['efficiency_score'])
-                })
+            for idx, row in equipment_data.iterrows():
+                equipment_id = row['Equipment ID']
+                engine_hours = row['Engine Hours/Day']
+                idle_hours = row['Idle Hours/Day']
+                utilization = row['utilization_ratio']
+                
+                anomaly_types = []
+                severity = 'medium'
+                
+                # Rule 1: Low utilization (< 35%)
+                if utilization < 0.35:
+                    anomaly_types.append('low_utilization')
+                    severity = 'medium'
+                
+                # Rule 2: High idle time (> 6 hours)
+                if idle_hours > 6:
+                    anomaly_types.append('high_idle_time')
+                    severity = 'high'
+                
+                # Rule 3: No usage (0 engine hours but has idle time)
+                if engine_hours == 0 and idle_hours > 0:
+                    anomaly_types.append('no_usage')
+                    severity = 'high'
+                
+                # If any anomaly detected, add to list
+                if anomaly_types:
+                    anomalies.append({
+                        "equipment_id": row['Equipment ID'],
+                        "equipment_type": row['Type'],
+                        "alert_type": anomaly_types[0],  # Primary anomaly type
+                        "severity": severity,
+                        "site_id": row['User ID'] if pd.notna(row['User ID']) else 'UNASSIGNED',
+                        "anomaly_score": -0.5,  # Default anomaly score for rule-based detection
+                        "engine_hours": float(engine_hours),
+                        "idle_hours": float(idle_hours),
+                        "utilization": float(utilization),
+                        "efficiency": float(row['efficiency_score'])
+                    })
             
             # Summary statistics
+            active_rental_count = len(equipment_data)
             anomaly_summary = {
                 "total_anomalies": len(anomalies),
-                "anomaly_rate": len(anomalies) / len(feature_data) * 100,
+                "total_records": total_equipment_count,  # Total equipment in system
+                "active_rentals": active_rental_count,  # Equipment currently rented out
+                "anomaly_rate": len(anomalies) / active_rental_count * 100 if active_rental_count > 0 else 0,
                 "equipment_affected": len(set([a['equipment_id'] for a in anomalies])),
                 "sites_affected": len(set([a['site_id'] for a in anomalies if a['site_id'] != 'UNASSIGNED']))
             }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 FastAPI ML Service for Smart Rental Tracking System
-This service exposes the ML system functionality via a REST API
+This service exposes the ML system functionality via a REST API with auto-restart on database changes
 """
 
 import os
@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from datetime import datetime
 import numpy as np
+import threading
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -26,12 +28,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ml-service")
 
-# Import SmartMLSystem
+# Import SmartMLSystem and DatabaseWatcher
 try:
     from smart_ml_system import SmartMLSystem
-    logger.info("Successfully imported SmartMLSystem")
+    from database_watcher import DatabaseWatcher, get_database_paths
+    logger.info("Successfully imported SmartMLSystem and DatabaseWatcher")
 except ImportError as e:
-    logger.error(f"Failed to import SmartMLSystem: {e}")
+    logger.error(f"Failed to import required modules: {e}")
     sys.exit(1)
 
 # Define API models
@@ -78,18 +81,94 @@ def clean_nan_values(obj):
     else:
         return obj
 
-# Initialize ML System
+# Global variables
 ml_system = None
+db_watcher = None
+restart_flag = False
+last_database_change = None
+reload_lock = threading.Lock()
+is_reloading = False
+
+def on_database_change():
+    """Callback function triggered when database changes are detected"""
+    global restart_flag, last_database_change, is_reloading
+    
+    # Prevent multiple simultaneous reloads
+    with reload_lock:
+        if is_reloading:
+            logger.info("ML system reload already in progress, skipping...")
+            return
+            
+        is_reloading = True
+        
+    try:
+        current_time = datetime.now()
+        last_database_change = current_time
+        restart_flag = True
+        
+        logger.info("Database change detected - triggering ML system reload")
+        print(f"[{current_time.strftime('%H:%M:%S')}] Database change detected - reloading ML system...")
+        
+        # Reinitialize ML system with new data
+        try:
+            global ml_system
+            logger.info("Reinitializing SmartMLSystem with updated data...")
+            ml_system = SmartMLSystem()
+            restart_flag = False
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] ML system reloaded successfully!")
+            logger.info("ML system reinitialized successfully")
+        except Exception as e:
+            logger.error(f"Error reinitializing ML system: {e}")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Error reloading ML system: {e}")
+            restart_flag = False
+    finally:
+        # Always release the reload flag
+        is_reloading = False
+
+# Initialize ML System
 try:
     logger.info("Initializing SmartMLSystem...")
     ml_system = SmartMLSystem()
     logger.info(f"SmartMLSystem initialized. Models trained: {ml_system.models_trained}")
 except Exception as e:
     logger.error(f"Failed to initialize SmartMLSystem: {e}")
+
+# Initialize Database Watcher
+try:
+    db_paths = get_database_paths()
+    if db_paths:
+        db_watcher = DatabaseWatcher(db_paths, on_database_change)
+        logger.info(f"Database watcher initialized for: {db_paths}")
+    else:
+        logger.warning("No database files found to monitor")
+except Exception as e:
+    logger.error(f"Failed to initialize database watcher: {e}")
     
 
 @app.on_event("startup")
 async def startup_event():
+    """Initialize database monitoring on startup"""
+    global db_watcher
+    if db_watcher:
+        try:
+            db_watcher.start_watching()
+            logger.info("Database monitoring started")
+        except Exception as e:
+            logger.error(f"Failed to start database monitoring: {e}")
+
+@app.on_event("shutdown") 
+async def shutdown_event():
+    """Clean up database monitoring on shutdown"""
+    global db_watcher
+    if db_watcher:
+        try:
+            db_watcher.stop_watching()
+            logger.info("Database monitoring stopped")
+        except Exception as e:
+            logger.error(f"Error stopping database monitoring: {e}")
+
+@app.on_event("startup")
+async def original_startup_event():
     """Run on application startup"""
     global ml_system
     if ml_system is None:
@@ -155,6 +234,21 @@ async def get_ml_health():
             "ml_system_available": True,
             "error": str(e)
         }
+
+
+@app.get("/ml/database-status")
+async def get_database_status():
+    """Get database change monitoring status"""
+    global last_database_change, restart_flag, db_watcher
+    
+    return {
+        "database_monitoring": db_watcher is not None and db_watcher.is_watching,
+        "monitored_paths": db_watcher.db_paths if db_watcher else [],
+        "last_change": last_database_change.isoformat() if last_database_change else None,
+        "restart_pending": restart_flag,
+        "ml_system_status": "initialized" if ml_system is not None else "not_initialized",
+        "checked_at": datetime.now().isoformat()
+    }
 
 
 @app.post("/ml/demand-forecast")
