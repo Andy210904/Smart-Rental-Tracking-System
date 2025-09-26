@@ -12,7 +12,6 @@ export default function AnomalyAlerts() {
   const [error, setError] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [serviceAvailable, setServiceAvailable] = useState(true)
-  const [databaseChangeNotification, setDatabaseChangeNotification] = useState<string | null>(null)
   const [lastDatabaseChange, setLastDatabaseChange] = useState<string | null>(null)
 
   useEffect(() => {
@@ -25,10 +24,10 @@ export default function AnomalyAlerts() {
     const startMonitoring = setTimeout(() => {
       checkDatabaseStatus()
       
-      // Set up polling for database changes (less frequent to reduce overhead)
+      // Set up polling for database changes (optimized frequency)
       interval = setInterval(() => {
         checkDatabaseStatus()
-      }, 10000) // Check every 10 seconds
+      }, 15000) // Check every 15 seconds
     }, 5000) // Wait 5 seconds before starting to monitor for changes
     
     return () => {
@@ -55,34 +54,34 @@ export default function AnomalyAlerts() {
       if (response.ok) {
         const dbStatus = await response.json()
         
-        // Only show notification if there's a genuinely new database change that's recent
-        if (dbStatus.last_change && 
-            dbStatus.last_change !== lastDatabaseChange && 
-            !databaseChangeNotification) { // Don't show if already showing a notification
-          
-          // Check if the change was recent (within last 2 minutes)
+        // Only process if there's actually a database change timestamp
+        if (dbStatus.last_change) {
           const changeTime = new Date(dbStatus.last_change)
-          const now = new Date()
-          const timeDiff = now.getTime() - changeTime.getTime()
-          const twoMinutesInMs = 2 * 60 * 1000
+          const changeTimeString = dbStatus.last_change
           
-          if (timeDiff <= twoMinutesInMs) {
-            setLastDatabaseChange(dbStatus.last_change)
-            const timeString = changeTime.toLocaleTimeString()
-            setDatabaseChangeNotification(`Database updated at ${timeString} - ML system reloaded`)
+          // Check if this is a truly new change that we haven't processed yet
+          const isNewChange = changeTimeString !== lastDatabaseChange
+          
+          if (isNewChange) {
+            // Check if the change is recent (within last 30 seconds) - only process very fresh changes
+            const now = new Date()
+            const timeDiff = now.getTime() - changeTime.getTime()
+            const thirtySecondsInMs = 30 * 1000
             
-            // Clear notification after 5 seconds
-            setTimeout(() => {
-              setDatabaseChangeNotification(null)
-            }, 5000)
-            
-            // Reload anomaly data to show updated results
-            setTimeout(() => {
-              loadAnomalyData()
-            }, 1500)
-          } else {
-            // Just update the last change without showing notification for old changes
-            setLastDatabaseChange(dbStatus.last_change)
+            if (timeDiff <= thirtySecondsInMs && timeDiff >= 0) { // Make sure it's not a future time
+              // Update tracking state
+              setLastDatabaseChange(changeTimeString)
+              
+              console.log(`Database change detected at ${changeTime.toLocaleTimeString()} - reloading anomaly data`)
+              
+              // Reload anomaly data to show updated results (only once)
+              setTimeout(() => {
+                loadAnomalyData()
+              }, 2000) // Give ML system time to reload
+            } else {
+              // Old change - just track it without processing
+              setLastDatabaseChange(changeTimeString)
+            }
           }
         }
       }
@@ -338,23 +337,6 @@ export default function AnomalyAlerts() {
 
   return (
     <div className="card">
-      {/* Database Change Notification */}
-      {databaseChangeNotification && (
-        <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded-lg flex items-center">
-          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          <span>{databaseChangeNotification}</span>
-          <button 
-            onClick={() => setDatabaseChangeNotification(null)}
-            className="ml-auto text-green-600 hover:text-green-800"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      )}
 
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-semibold">Anomaly Detection Alerts</h3>

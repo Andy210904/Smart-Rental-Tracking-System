@@ -88,6 +88,23 @@ class SmartMLSystem:
         
         return None
     
+    def _get_total_equipment_count(self):
+        """Get total equipment count from Equipment table"""
+        db_path = self._get_database_path()
+        if not db_path:
+            return 151  # Default fallback
+        
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM Equipment")
+            count = cursor.fetchone()[0]
+            conn.close()
+            return count
+        except Exception as e:
+            print(f"Error getting total equipment count: {e}")
+            return 151  # Default fallback
+
     def _load_database_data(self):
         """Load real-time data from the database for predictions"""
         db_path = self._get_database_path()
@@ -857,20 +874,60 @@ class SmartMLSystem:
         
         if db_data is None or len(db_data) == 0:
             return {
-                'overall': {'utilization_rate': 75.0, 'active_rentals': 10},
+                'overall': {
+                    'utilization_rate': 75.0, 
+                    'active_rentals': 10,
+                    'total_equipment': 151,
+                    'average_utilization': 65.3,
+                    'total_engine_hours': 482.5
+                },
                 'by_equipment_type': {
-                    'Excavator': {'utilization_rate': 78.0, 'active_rentals': 3},
-                    'Bulldozer': {'utilization_rate': 72.0, 'active_rentals': 2},
-                    'Crane': {'utilization_rate': 80.0, 'active_rentals': 3},
-                    'Grader': {'utilization_rate': 70.0, 'active_rentals': 2}
+                    'Excavator': {
+                        'utilization_rate': 78.0, 
+                        'active_rentals': 3,
+                        'count': 8,
+                        'avg_engine_hours': 4.2,
+                        'avg_idle_hours': 1.8,
+                        'avg_utilization': 70.0,
+                        'avg_efficiency': 0.525
+                    },
+                    'Bulldozer': {
+                        'utilization_rate': 72.0, 
+                        'active_rentals': 2,
+                        'count': 12,
+                        'avg_engine_hours': 4.7,
+                        'avg_idle_hours': 2.5,
+                        'avg_utilization': 65.3,
+                        'avg_efficiency': 0.588
+                    },
+                    'Crane': {
+                        'utilization_rate': 80.0, 
+                        'active_rentals': 3,
+                        'count': 11,
+                        'avg_engine_hours': 4.8,
+                        'avg_idle_hours': 2.2,
+                        'avg_utilization': 68.6,
+                        'avg_efficiency': 0.600
+                    },
+                    'Dump Truck': {
+                        'utilization_rate': 70.0, 
+                        'active_rentals': 2,
+                        'count': 12,
+                        'avg_engine_hours': 4.3,
+                        'avg_idle_hours': 2.9,
+                        'avg_utilization': 59.7,
+                        'avg_efficiency': 0.538
+                    }
                 }
             }
         
         try:
             stats = {}
             
+            # Get total equipment count from Equipment table (not just rental records)
+            total_equipment = self._get_total_equipment_count()
+            
             # Calculate active rentals (equipment currently checked out)
-            total_equipment = len(db_data)
             active_equipment = len(db_data[db_data['Check-in Date'].isna() | (db_data['Check-in Date'] == '')])
             overall_utilization = (active_equipment / total_equipment * 100) if total_equipment > 0 else 0
             
@@ -880,11 +937,19 @@ class SmartMLSystem:
                 active_equipment = active_rentals_count
                 overall_utilization = (active_equipment / total_equipment * 100) if total_equipment > 0 else 0
             
+            # Calculate overall utilization metrics
+            total_engine_hours = db_data['Engine Hours/Day'].sum()
+            total_idle_hours = db_data['Idle Hours/Day'].sum()
+            total_hours = total_engine_hours + total_idle_hours
+            average_utilization = (total_engine_hours / total_hours * 100) if total_hours > 0 else 0
+
             # Overall statistics
             stats['overall'] = {
                 'utilization_rate': round(overall_utilization, 1),
                 'active_rentals': active_equipment,
-                'total_equipment': total_equipment
+                'total_equipment': total_equipment,
+                'average_utilization': round(average_utilization, 1),
+                'total_engine_hours': round(total_engine_hours, 2)
             }
             
             # Statistics by equipment type using real-time data
@@ -900,12 +965,19 @@ class SmartMLSystem:
                     avg_engine_hours = type_data['Engine Hours/Day'].mean() if not type_data['Engine Hours/Day'].isna().all() else 0
                     avg_idle_hours = type_data['Idle Hours/Day'].mean() if not type_data['Idle Hours/Day'].isna().all() else 0
                     
+                    # Calculate utilization and efficiency for this type
+                    type_total_hours = avg_engine_hours + avg_idle_hours
+                    avg_utilization_pct = (avg_engine_hours / type_total_hours * 100) if type_total_hours > 0 else 0
+                    avg_efficiency = (avg_engine_hours / 8.0) if avg_engine_hours > 0 else 0  # Efficiency based on 8-hour workday
+                    
                     stats['by_equipment_type'][equipment_type] = {
                         'utilization_rate': round(type_utilization, 1),
                         'active_rentals': type_active,
                         'count': type_total,
                         'avg_engine_hours': round(avg_engine_hours, 2),
-                        'avg_idle_hours': round(avg_idle_hours, 2)
+                        'avg_idle_hours': round(avg_idle_hours, 2),
+                        'avg_utilization': round(avg_utilization_pct, 1),
+                        'avg_efficiency': round(min(avg_efficiency, 1.0), 3)  # Cap efficiency at 100%
                     }
             
             # Statistics by site using real-time data
@@ -931,12 +1003,50 @@ class SmartMLSystem:
         except Exception as e:
             print(f"Error calculating equipment stats from database: {e}")
             return {
-                'overall': {'utilization_rate': 75.0, 'active_rentals': 10},
+                'overall': {
+                    'utilization_rate': 75.0, 
+                    'active_rentals': 10,
+                    'total_equipment': 151,
+                    'average_utilization': 65.3,
+                    'total_engine_hours': 482.5
+                },
                 'by_equipment_type': {
-                    'Excavator': {'utilization_rate': 78.0, 'active_rentals': 3},
-                    'Bulldozer': {'utilization_rate': 72.0, 'active_rentals': 2},
-                    'Crane': {'utilization_rate': 80.0, 'active_rentals': 3},
-                    'Grader': {'utilization_rate': 70.0, 'active_rentals': 2}
+                    'Excavator': {
+                        'utilization_rate': 78.0, 
+                        'active_rentals': 3,
+                        'count': 8,
+                        'avg_engine_hours': 4.2,
+                        'avg_idle_hours': 1.8,
+                        'avg_utilization': 70.0,
+                        'avg_efficiency': 0.525
+                    },
+                    'Bulldozer': {
+                        'utilization_rate': 72.0, 
+                        'active_rentals': 2,
+                        'count': 12,
+                        'avg_engine_hours': 4.7,
+                        'avg_idle_hours': 2.5,
+                        'avg_utilization': 65.3,
+                        'avg_efficiency': 0.588
+                    },
+                    'Crane': {
+                        'utilization_rate': 80.0, 
+                        'active_rentals': 3,
+                        'count': 11,
+                        'avg_engine_hours': 4.8,
+                        'avg_idle_hours': 2.2,
+                        'avg_utilization': 68.6,
+                        'avg_efficiency': 0.600
+                    },
+                    'Dump Truck': {
+                        'utilization_rate': 70.0, 
+                        'active_rentals': 2,
+                        'count': 12,
+                        'avg_engine_hours': 4.3,
+                        'avg_idle_hours': 2.9,
+                        'avg_utilization': 59.7,
+                        'avg_efficiency': 0.538
+                    }
                 }
             }
     

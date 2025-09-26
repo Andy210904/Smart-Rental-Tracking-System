@@ -1696,12 +1696,11 @@ export default function RentalDashboard({ dashboardData }: Props) {
 
           {/* Enhanced Tabs with Interactive Content */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-5 bg-white shadow-sm">
+            <TabsList className="grid w-full grid-cols-4 bg-white shadow-sm">
               <TabsTrigger value="active">Active Rentals ({getActiveRentalsCount()})</TabsTrigger>
               <TabsTrigger value="available">Available ({getAvailableEquipmentCount()})</TabsTrigger>
               <TabsTrigger value="overdue">Overdue ({getOverdueCount()})</TabsTrigger>
               <TabsTrigger value="due-soon">Due Soon ({getDueSoonCount()})</TabsTrigger>
-              <TabsTrigger value="analytics">Analytics</TabsTrigger>
             </TabsList>
 
             {/* Available Equipment Tab */}
@@ -1892,44 +1891,23 @@ export default function RentalDashboard({ dashboardData }: Props) {
                         onClick={() => handlePageChange(currentPage - 1)}
                         disabled={currentPage === 1}
                       >
-
-                        {/* Page Numbers */}
-                        <div className="flex items-center gap-1">
-                          {/* First few pages */}
-                          {Array.from({ length: Math.min(5, getTotalPages(getAvailableEquipment)) }, (_, i) => i + 1).map(page => (
-                            <Button
-                              key={page}
-                              variant={currentPage === page ? 'default' : 'outline'}
-                              size="sm"
-                              onClick={() => handlePageChange(page)}
-                              className="w-8 h-8 p-0"
-                            >
-                              {page}
-                            </Button>
-                          ))}
-
-                          {/* Ellipsis if more than 5 pages */}
-                          {getTotalPages(getAvailableEquipment) > 5 && (
-                            <span className="text-sm text-gray-500 px-2">...</span>
-                          )}
-
-                          {/* Last few pages if more than 5 */}
-                          {getTotalPages(getAvailableEquipment) > 5 && (
-                            Array.from({ length: Math.min(3, getTotalPages(getAvailableEquipment) - 5) }, (_, i) => getTotalPages(getAvailableEquipment) - 2 + i).map(page => (
-                              <Button
-                                key={page}
-                                variant={currentPage === page ? 'default' : 'outline'}
-                                size="sm"
-                                onClick={() => handlePageChange(page)}
-                                className="w-8 h-8 p-0"
-                              >
-                                {page}
-                              </Button>
-                            ))
-                          )}
-                        </div>
-
+                        Previous
                       </Button>
+
+                      {/* Page Numbers - Simple version showing all pages */}
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: getTotalPages(getAvailableEquipment) }, (_, i) => i + 1).map(page => (
+                          <Button
+                            key={page}
+                            variant={currentPage === page ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => handlePageChange(page)}
+                            className="w-8 h-8 p-0"
+                          >
+                            {page}
+                          </Button>
+                        ))}
+                      </div>
                       <Button
                         variant="outline"
                         size="sm"
@@ -2234,10 +2212,9 @@ export default function RentalDashboard({ dashboardData }: Props) {
                         Previous
                       </Button>
 
-                      {/* Page Numbers */}
+                      {/* Page Numbers - Simple version showing all pages */}
                       <div className="flex items-center gap-1">
-                        {/* First few pages */}
-                        {Array.from({ length: Math.min(5, getTotalPages(getActiveRentals)) }, (_, i) => i + 1).map(page => (
+                        {Array.from({ length: getTotalPages(getActiveRentals) }, (_, i) => i + 1).map(page => (
                           <Button
                             key={page}
                             variant={currentPage === page ? 'default' : 'outline'}
@@ -2248,26 +2225,6 @@ export default function RentalDashboard({ dashboardData }: Props) {
                             {page}
                           </Button>
                         ))}
-
-                        {/* Ellipsis if more than 5 pages */}
-                        {getTotalPages(getActiveRentals) > 5 && (
-                          <span className="text-sm text-gray-500 px-2">...</span>
-                        )}
-
-                        {/* Last few pages if more than 5 */}
-                        {getTotalPages(getActiveRentals) > 5 && (
-                          Array.from({ length: Math.min(3, getTotalPages(getActiveRentals) - 5) }, (_, i) => getTotalPages(getActiveRentals) - 2 + i).map(page => (
-                            <Button
-                              key={page}
-                              variant={currentPage === page ? 'default' : 'outline'}
-                              size="sm"
-                              onClick={() => handlePageChange(page)}
-                              className="w-8 h-8 p-0"
-                            >
-                              {page}
-                            </Button>
-                          ))
-                        )}
                       </div>
 
                       <Button
